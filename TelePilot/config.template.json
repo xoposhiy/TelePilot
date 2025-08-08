@@ -1,0 +1,11 @@
+{
+  "new_chats_folder": "⁉️",
+  "telegram": {
+    "bot_token": "from http://t.me/BotFather",
+    "api_id": "from https://my.telegram.org/apps",
+    "api_hash": "from https://my.telegram.org/apps",
+    "phone_number": "your telegram account phone number",
+    "me_comment": "next field is your telegramId. get it from @getmyidbot", 
+    "me": 0
+  }
+} 
