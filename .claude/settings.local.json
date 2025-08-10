@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:core.telegram.org)",
+      "Bash(dotnet build)"
+    ],
+    "deny": []
+  }
+}

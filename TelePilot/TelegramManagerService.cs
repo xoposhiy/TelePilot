@@ -163,6 +163,12 @@ internal class TelegramManagerService
 
                     knownChats.Add(chat.ID, chat.Title);
                     newUnknown++;
+                    
+                    // Add new chat to specified folder if configured
+                    if (!string.IsNullOrEmpty(config.NewChatsFolder))
+                    {
+                        await AddChatToFolder(chat, config.NewChatsFolder);
+                    }
                 }
             }
             await File.WriteAllLinesAsync("known-chats.txt",
@@ -199,6 +205,77 @@ internal class TelegramManagerService
         if (span.TotalDays < 7)
             return $"{(int)span.TotalDays} day{(span.TotalDays >= 2 ? "s" : "") } ago";
         return dateTime.ToString("g");
+    }
+
+    private async Task AddChatToFolder(ChatBase chat, string folderName)
+    {
+        try
+        {
+            logger.LogInformation($"Adding chat {chat.Title} (ID: {chat.ID}) to folder '{folderName}'");
+            
+            // Get current folders
+            var filters = await telegramClient.Messages_GetDialogFilters();
+            
+            // Find or create the target folder
+            DialogFilter? targetFolder = null;
+            foreach (var filter in filters.filters)
+            {
+                if (filter is DialogFilter dialogFilter && dialogFilter.Title.text == folderName)
+                {
+                    targetFolder = dialogFilter;
+                    break;
+                }
+            }
+            
+            // If folder doesn't exist, create it
+            if (targetFolder == null)
+            {
+                logger.LogInformation($"Creating new folder '{folderName}'");
+                targetFolder = new DialogFilter
+                {
+                    id = filters.filters.Length > 0 ? filters.filters.Where(f => f is DialogFilter).Cast<DialogFilter>().Max(f => f.id) + 1 : 1,
+                    title = new TextWithEntities { text = folderName },
+                    flags = DialogFilter.Flags.contacts | DialogFilter.Flags.non_contacts | 
+                           DialogFilter.Flags.groups | DialogFilter.Flags.broadcasts | DialogFilter.Flags.bots,
+                    include_peers = new InputPeer[0],
+                    exclude_peers = new InputPeer[0]
+                };
+                
+                await telegramClient.Messages_UpdateDialogFilter(targetFolder.id, targetFolder);
+            }
+            
+            // Create the appropriate InputPeer based on chat type
+            InputPeer chatPeer = chat switch
+            {
+                Chat => new InputPeerChat(chat.ID),
+                Channel channel => new InputPeerChannel(chat.ID, channel.access_hash),
+                _ => throw new InvalidOperationException($"Unknown chat type: {chat.GetType()}")
+            };
+            
+            var currentIncludePeers = targetFolder.include_peers?.ToList() ?? new List<InputPeer>();
+            
+            // Check if chat is already in the folder
+            bool alreadyInFolder = currentIncludePeers.Any(peer => 
+                (peer is InputPeerChat inputPeerChat && inputPeerChat.chat_id == chat.ID) ||
+                (peer is InputPeerChannel inputPeerChannel && inputPeerChannel.channel_id == chat.ID));
+            
+            if (!alreadyInFolder)
+            {
+                currentIncludePeers.Add(chatPeer);
+                targetFolder.include_peers = currentIncludePeers.ToArray();
+                
+                await telegramClient.Messages_UpdateDialogFilter(targetFolder.id, targetFolder);
+                logger.LogInformation($"Successfully added chat '{chat.Title}' to folder '{folderName}'");
+            }
+            else
+            {
+                logger.LogInformation($"Chat '{chat.Title}' is already in folder '{folderName}'");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, $"Failed to add chat '{chat.Title}' to folder '{folderName}': {ex.Message}");
+        }
     }
 
     public void Stop()
